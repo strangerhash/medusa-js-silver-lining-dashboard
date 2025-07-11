@@ -1,0 +1,141 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  phone          String?  @unique
+  password       String
+  name           String
+  role           UserRole @default(USER)
+  status         UserStatus @default(ACTIVE)
+  kycApplications KycApplication[]
+  transactions   Transaction[]
+  notifications  Notification[]
+  portfolio      Portfolio?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+model KycApplication {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  status       KycStatus @default(PENDING)
+  submittedAt  DateTime  @default(now())
+  reviewedAt   DateTime?
+  reviewedBy   String?
+  remarks      String?
+  documents    Json
+  personalInfo Json
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Transaction {
+  id              String   @id @default(uuid())
+  user            User     @relation(fields: [userId], references: [id])
+  userId          String
+  type            TransactionType
+  amount          Float
+  silverQuantity  Float
+  silverPrice     Float
+  status          TransactionStatus @default(PENDING)
+  transactionDate DateTime @default(now())
+  paymentMethod   String
+  referenceId     String   @unique
+  fees            Float
+  totalAmount     Float
+  details         Json?
+  remarks         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum TransactionType {
+  BUY
+  SELL
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Portfolio {
+  id                String   @id @default(uuid())
+  user              User     @relation(fields: [userId], references: [id])
+  userId            String   @unique
+  totalSilverHolding Float
+  totalInvested     Float
+  currentValue      Float
+  totalProfit       Float
+  profitPercentage  Float
+  averageBuyPrice   Float
+  currentSilverPrice Float
+  lastUpdated       DateTime @default(now())
+  holdings          Json     // Array of holding objects
+  performance       Json     // { daily, weekly, monthly, yearly }
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  title      String
+  message    String
+  type       NotificationType
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model Setting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  category    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

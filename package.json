@@ -1,0 +1,45 @@
+{
+  "name": "silver-lining-mvp",
+  "version": "1.0.0",
+  "description": "Silver Lining MVP - Digital Silver Investment Platform",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:admin\"",
+    "dev:backend": "cd silver-lining-mvp/backend && npm run dev",
+    "dev:admin": "cd silver-lining-mvp/admin-dashboard && npm run dev",
+    "build": "npm run build:backend && npm run build:admin",
+    "build:backend": "cd silver-lining-mvp/backend && npm run build",
+    "build:admin": "cd silver-lining-mvp/admin-dashboard && npm run build",
+    "test": "npm run test:backend && npm run test:admin",
+    "test:backend": "cd silver-lining-mvp/backend && npm test",
+    "test:admin": "cd silver-lining-mvp/admin-dashboard && npm test",
+    "install:all": "npm install && cd silver-lining-mvp/backend && npm install && cd ../admin-dashboard && npm install",
+    "setup": "npm run install:all && npm run setup:db",
+    "setup:db": "cd silver-lining-mvp/backend && npm run db:migrate && npm run db:seed",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:admin\"",
+    "start:backend": "cd silver-lining-mvp/backend && npm start",
+    "start:admin": "cd silver-lining-mvp/admin-dashboard && npm start"
+  },
+  "keywords": [
+    "silver",
+    "investment",
+    "fintech",
+    "medusa",
+    "dashboard",
+    "admin"
+  ],
+  "author": "Silver Lining Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.0.2"
+  },
+  "workspaces": [
+    "backend",
+    "admin-dashboard",
+    "shared"
+  ],
+  "dependencies": {
+    "openapi-types": "^12.1.3"
+  }
+}
