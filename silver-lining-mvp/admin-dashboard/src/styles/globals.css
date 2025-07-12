@@ -145,4 +145,15 @@
     border: 1px solid rgba(71, 85, 105, 0.5) !important;
     color: #f1f5f9 !important;
   }
+
+  /* Notification Dropdown */
+  .notification-dropdown {
+    z-index: 999999 !important;
+    position: relative !important;
+  }
+  
+  .notification-dropdown .dropdown-content {
+    z-index: 999999 !important;
+    position: absolute !important;
+  }
 } 

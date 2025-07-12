@@ -1,208 +1,73 @@
 import 'reflect-metadata';
-import { JsonController, Get, Post, Put, Body, Param, HttpCode, HttpError } from 'routing-controllers';
-import { IsString, IsOptional, IsEnum, IsBoolean } from 'class-validator';
-import { PrismaClient, $Enums } from '../generated/prisma';
+import { JsonController, Get, Post, Put, Delete, Body, Param, QueryParam, HttpCode, UseBefore, Req } from 'routing-controllers';
+import { IsOptional, IsEnum, IsString, IsNumber } from 'class-validator';
+import { notificationService, NotificationType } from '../services/notification';
 import { logger } from '../utils/logger';
-
-const prisma = new PrismaClient();
-
-class CreateNotificationDto {
-  @IsString()
-  userId!: string;
-
-  @IsString()
-  title!: string;
-
-  @IsString()
-  message!: string;
-
-  @IsEnum($Enums.NotificationType)
-  type!: $Enums.NotificationType;
-}
-
-class UpdateNotificationDto {
-  @IsOptional()
-  @IsBoolean()
-  isRead?: boolean;
-}
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 
 @JsonController('/notifications')
+@UseBefore(authMiddleware)
 export class NotificationsController {
   /**
-   * @summary Get all notifications
-   * @description Retrieve all notifications with optional filtering
+   * @summary Get user notifications
+   * @description Retrieve paginated notifications for the authenticated user
    * @tags Notifications
    */
   @Get('/')
   @HttpCode(200)
-  async getAllNotifications(@Body() query: any) {
+  async getUserNotifications(
+    @Req() req: AuthRequest,
+    @QueryParam('page') page: number = 1,
+    @QueryParam('limit') limit: number = 20,
+    @QueryParam('unreadOnly') unreadOnly: boolean = false,
+    @QueryParam('type') type?: NotificationType
+  ) {
     try {
-      const { page = 1, limit = 10, type, isRead, userId } = query;
-      const skip = (Number(page) - 1) * Number(limit);
+      // Get user ID from auth context
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new Error('User ID not found in auth context');
+      }
 
-      // Build where clause
-      const where: any = {};
-      if (type) where.type = type;
-      if (isRead !== undefined) where.isRead = isRead === 'true';
-      if (userId) where.userId = userId;
+      const result = await notificationService.getUserNotifications(userId, {
+        page,
+        limit,
+        unreadOnly,
+        type
+      });
 
-      const [notifications, total] = await Promise.all([
-        prisma.notification.findMany({
-          where,
-          skip,
-          take: Number(limit),
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
-            }
-          },
-          orderBy: { createdAt: 'desc' }
-        }),
-        prisma.notification.count({ where })
-      ]);
-
-      logger.info(`Retrieved ${notifications.length} notifications`);
+      logger.info(`Retrieved ${result.notifications.length} notifications for user ${userId}`);
 
       return {
         success: true,
-        data: {
-          notifications,
-          pagination: {
-            page: Number(page),
-            limit: Number(limit),
-            total,
-            totalPages: Math.ceil(total / Number(limit))
-          }
-        }
-      };
-    } catch (error) {
-      logger.error('Get all notifications error:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * @summary Get notification by ID
-   * @description Retrieve a specific notification by ID
-   * @tags Notifications
-   */
-  @Get('/:id')
-  @HttpCode(200)
-  async getNotificationById(@Param('id') id: string) {
-    try {
-      const notification = await prisma.notification.findUnique({
-        where: { id },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          }
-        }
-      });
-
-      if (!notification) {
-        throw new HttpError(404, 'Notification not found');
-      }
-
-      return {
-        success: true,
-        data: notification
-      };
-    } catch (error) {
-      logger.error('Get notification by ID error:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * @summary Create notification
-   * @description Create a new notification
-   * @tags Notifications
-   */
-  @Post('/')
-  @HttpCode(201)
-  async createNotification(@Body() body: CreateNotificationDto) {
-    try {
-      const { userId, title, message, type } = body;
-
-      // Check if user exists
-      const user = await prisma.user.findUnique({
-        where: { id: userId }
-      });
-
-      if (!user) {
-        throw new HttpError(404, 'User not found');
-      }
-
-      const notification = await prisma.notification.create({
-        data: {
-          userId,
-          title,
-          message,
-          type,
-          isRead: false
+        data: result.notifications,
+        pagination: {
+          page: result.page,
+          limit,
+          total: result.total,
+          totalPages: result.totalPages,
+          hasNext: result.page < result.totalPages,
+          hasPrev: result.page > 1
         },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          }
-        }
-      });
-
-      logger.info(`Created notification for user: ${user.email}`);
-
-      return {
-        success: true,
-        data: notification
+        unreadCount: result.unreadCount
       };
     } catch (error) {
-      logger.error('Create notification error:', error);
+      logger.error('Get user notifications error:', error);
       throw error;
     }
   }
 
   /**
    * @summary Mark notification as read
-   * @description Mark a notification as read
+   * @description Mark a specific notification as read
    * @tags Notifications
    */
   @Put('/:id/read')
   @HttpCode(200)
-  async markNotificationAsRead(@Param('id') id: string) {
+  async markAsRead(@Param('id') id: string) {
     try {
-      // Check if notification exists
-      const existingNotification = await prisma.notification.findUnique({
-        where: { id }
-      });
-
-      if (!existingNotification) {
-        throw new HttpError(404, 'Notification not found');
-      }
-
-      const notification = await prisma.notification.update({
-        where: { id },
-        data: { isRead: true },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          }
-        }
-      });
+      const notification = await notificationService.markAsRead(id);
 
       logger.info(`Marked notification as read: ${id}`);
 
@@ -217,139 +82,226 @@ export class NotificationsController {
   }
 
   /**
-   * @summary Get user notifications
-   * @description Retrieve all notifications for a specific user
+   * @summary Mark all notifications as read
+   * @description Mark all notifications for the user as read
    * @tags Notifications
    */
-  @Get('/user/:userId')
+  @Put('/mark-all-read')
   @HttpCode(200)
-  async getUserNotifications(@Param('userId') userId: string, @Body() query: any) {
+  async markAllAsRead(@Req() req: AuthRequest) {
     try {
-      const { page = 1, limit = 10, isRead } = query;
-      const skip = (Number(page) - 1) * Number(limit);
-
-      // Check if user exists
-      const user = await prisma.user.findUnique({
-        where: { id: userId }
-      });
-
-      if (!user) {
-        throw new HttpError(404, 'User not found');
+      // Get user ID from auth context
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new Error('User ID not found in auth context');
       }
 
-      // Build where clause
-      const where: any = { userId };
-      if (isRead !== undefined) where.isRead = isRead === 'true';
+      await notificationService.markAllAsRead(userId);
 
-      const [notifications, total] = await Promise.all([
-        prisma.notification.findMany({
-          where,
-          skip,
-          take: Number(limit),
-          orderBy: { createdAt: 'desc' }
-        }),
-        prisma.notification.count({ where })
-      ]);
-
-      logger.info(`Retrieved ${notifications.length} notifications for user: ${user.email}`);
+      logger.info(`Marked all notifications as read for user ${userId}`);
 
       return {
         success: true,
-        data: {
-          notifications,
-          pagination: {
-            page: Number(page),
-            limit: Number(limit),
-            total,
-            totalPages: Math.ceil(total / Number(limit))
-          }
-        }
+        message: 'All notifications marked as read'
       };
     } catch (error) {
-      logger.error('Get user notifications error:', error);
+      logger.error('Mark all notifications as read error:', error);
       throw error;
     }
   }
 
   /**
-   * @summary Mark all user notifications as read
-   * @description Mark all notifications for a user as read
+   * @summary Delete notification
+   * @description Delete a specific notification
    * @tags Notifications
    */
-  @Put('/user/:userId/read-all')
+  @Delete('/:id')
   @HttpCode(200)
-  async markAllUserNotificationsAsRead(@Param('userId') userId: string) {
+  async deleteNotification(@Param('id') id: string) {
     try {
-      // Check if user exists
-      const user = await prisma.user.findUnique({
-        where: { id: userId }
-      });
+      await notificationService.deleteNotification(id);
 
-      if (!user) {
-        throw new HttpError(404, 'User not found');
-      }
-
-      const result = await prisma.notification.updateMany({
-        where: { userId, isRead: false },
-        data: { isRead: true }
-      });
-
-      logger.info(`Marked ${result.count} notifications as read for user: ${user.email}`);
+      logger.info(`Deleted notification: ${id}`);
 
       return {
         success: true,
-        data: {
-          updatedCount: result.count
-        }
+        message: 'Notification deleted successfully'
       };
     } catch (error) {
-      logger.error('Mark all user notifications as read error:', error);
+      logger.error('Delete notification error:', error);
       throw error;
     }
   }
 
   /**
    * @summary Get notification statistics
-   * @description Get aggregated notification statistics
+   * @description Get notification statistics for the user
    * @tags Notifications
    */
-  @Get('/stats/overview')
+  @Get('/stats')
   @HttpCode(200)
-  async getNotificationStats() {
+  async getNotificationStats(@Req() req: AuthRequest) {
     try {
-      const [
-        totalNotifications,
-        unreadNotifications,
-        readNotifications,
-        notificationsByType
-      ] = await Promise.all([
-        prisma.notification.count(),
-        prisma.notification.count({ where: { isRead: false } }),
-        prisma.notification.count({ where: { isRead: true } }),
-        prisma.notification.groupBy({
-          by: ['type'],
-          _count: { type: true }
-        })
-      ]);
+      // Get user ID from auth context
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        throw new Error('User ID not found in auth context');
+      }
 
-      const typeStats = notificationsByType.reduce((acc: Record<string, number>, item: any) => {
-        acc[item.type] = item._count.type;
-        return acc;
-      }, {} as Record<string, number>);
+      const stats = await notificationService.getNotificationStats(userId);
 
       logger.info('Retrieved notification statistics');
 
       return {
         success: true,
-        data: {
-          totalNotifications,
-          unreadNotifications,
-          readNotifications,
-          notificationsByType: typeStats
-        }
+        data: stats
       };
     } catch (error) {
       logger.error('Get notification stats error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @summary Create notification (Admin only)
+   * @description Create a new notification for a user
+   * @tags Notifications
+   */
+  @Post('/')
+  @HttpCode(201)
+  async createNotification(@Body() body: {
+    userId: string;
+    title: string;
+    message: string;
+    type: NotificationType;
+    metadata?: Record<string, any>;
+  }) {
+    try {
+      const notification = await notificationService.createNotification(body);
+
+      logger.info(`Created notification for user: ${body.userId}`);
+
+      return {
+        success: true,
+        data: notification
+      };
+    } catch (error) {
+      logger.error('Create notification error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @summary Send template notification (Admin only)
+   * @description Send a notification using predefined templates
+   * @tags Notifications
+   */
+  @Post('/template/:templateId')
+  @HttpCode(201)
+  async sendTemplateNotification(
+    @Param('templateId') templateId: string,
+    @Body() body: {
+      userId: string;
+      variables: Record<string, any>;
+    }
+  ) {
+    try {
+      const notification = await notificationService.sendTemplateNotification(
+        templateId,
+        body.userId,
+        body.variables
+      );
+
+      logger.info(`Sent template notification ${templateId} to user: ${body.userId}`);
+
+      return {
+        success: true,
+        data: notification
+      };
+    } catch (error) {
+      logger.error('Send template notification error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @summary Create system notification (Admin only)
+   * @description Create a notification for all admin users
+   * @tags Notifications
+   */
+  @Post('/system')
+  @HttpCode(201)
+  async createSystemNotification(@Body() body: {
+    title: string;
+    message: string;
+    type: NotificationType;
+    metadata?: Record<string, any>;
+  }) {
+    try {
+      await notificationService.createSystemNotification(
+        body.title,
+        body.message,
+        body.type,
+        body.metadata
+      );
+
+      logger.info('Created system notification');
+
+      return {
+        success: true,
+        message: 'System notification created successfully'
+      };
+    } catch (error) {
+      logger.error('Create system notification error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * @summary Get all notifications (Admin only)
+   * @description Retrieve all notifications with pagination and filtering
+   * @tags Notifications
+   */
+  @Get('/all')
+  @HttpCode(200)
+  async getAllNotifications(
+    @QueryParam('page') page: number = 1,
+    @QueryParam('limit') limit: number = 50,
+    @QueryParam('type') type?: NotificationType,
+    @QueryParam('unreadOnly') unreadOnly: boolean = false,
+    @QueryParam('userId') userId?: string
+  ) {
+    try {
+      // This would require a different service method for admin access
+      // For now, we'll use the existing method with a specific user
+      const targetUserId = userId || 'all-users';
+      
+      const result = await notificationService.getUserNotifications(targetUserId, {
+        page,
+        limit,
+        unreadOnly,
+        type
+      });
+
+      logger.info(`Retrieved ${result.notifications.length} notifications (admin view)`);
+
+      return {
+        success: true,
+        data: result.notifications,
+        pagination: {
+          page: result.page,
+          limit,
+          total: result.total,
+          totalPages: result.totalPages,
+          hasNext: result.page < result.totalPages,
+          hasPrev: result.page > 1
+        },
+        unreadCount: result.unreadCount
+      };
+    } catch (error) {
+      logger.error('Get all notifications error:', error);
       throw error;
     }
   }

@@ -60,17 +60,17 @@ export class AnalyticsController {
       // Generate monthly data for charts from real database
       const monthlyData = [];
       
-      // Use a fixed date range that matches our seeded data (Jan-Jun 2025)
-      for (let i = 0; i < 6; i++) {
-        const monthDate = new Date(2025, i, 1); // January to June 2025
-        const nextMonthDate = new Date(2025, i + 1, 1);
+      // Use dynamic date range based on actual data (last 6 months from now)
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const nextMonthDate = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
         const monthName = monthDate.toLocaleDateString('en-US', { month: 'short' });
         
-        // Get users created in this month
+        // Get users created up to this month (cumulative)
         const monthUsers = await prisma.user.count({
           where: {
             createdAt: {
-              gte: monthDate,
               lt: nextMonthDate
             }
           }

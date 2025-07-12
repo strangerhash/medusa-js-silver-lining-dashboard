@@ -115,6 +115,74 @@ export class TransactionsController {
   }
 
   /**
+   * @summary Get transaction statistics
+   * @description Get aggregated transaction statistics
+   * @tags Transactions
+   */
+  @Get('/stats')
+  @HttpCode(200)
+  async getTransactionStats() {
+    try {
+      const [
+        totalTransactions,
+        totalAmount,
+        totalSilverQuantity,
+        transactionsByType,
+        transactionsByStatus
+      ] = await Promise.all([
+        prisma.transaction.count(),
+        prisma.transaction.aggregate({
+          _sum: { amount: true }
+        }),
+        prisma.transaction.aggregate({
+          _sum: { silverQuantity: true }
+        }),
+        prisma.transaction.groupBy({
+          by: ['type'],
+          _count: { type: true },
+          _sum: { amount: true }
+        }),
+        prisma.transaction.groupBy({
+          by: ['status'],
+          _count: { status: true }
+        })
+      ]);
+
+      const typeStats = transactionsByType.reduce((acc: Record<string, any>, item: any) => {
+        acc[item.type] = {
+          count: item._count.type,
+          totalAmount: item._sum.amount
+        };
+        return acc;
+      }, {} as Record<string, any>);
+
+      const statusStats = transactionsByStatus.reduce((acc: Record<string, number>, item: any) => {
+        acc[item.status] = item._count.status;
+        return acc;
+      }, {} as Record<string, number>);
+
+      logger.info('Retrieved transaction statistics');
+
+      return {
+        success: true,
+        data: {
+          totalTransactions,
+          totalAmount: totalAmount._sum.amount || 0,
+          totalSilverQuantity: totalSilverQuantity._sum.silverQuantity || 0,
+          transactionsByType: typeStats,
+          transactionsByStatus: statusStats
+        }
+      };
+    } catch (error) {
+      logger.error('Get transaction stats error:', error);
+      if (error instanceof HttpError) {
+        throw error;
+      }
+      throw new HttpError(500, 'Failed to fetch transaction statistics');
+    }
+  }
+
+  /**
    * @summary Get transaction by ID
    * @description Retrieve a specific transaction by ID
    * @tags Transactions
@@ -323,71 +391,5 @@ export class TransactionsController {
     }
   }
 
-  /**
-   * @summary Get transaction statistics
-   * @description Get aggregated transaction statistics
-   * @tags Transactions
-   */
-  @Get('/stats/overview')
-  @HttpCode(200)
-  async getTransactionStats() {
-    try {
-      const [
-        totalTransactions,
-        totalAmount,
-        totalSilverQuantity,
-        transactionsByType,
-        transactionsByStatus
-      ] = await Promise.all([
-        prisma.transaction.count(),
-        prisma.transaction.aggregate({
-          _sum: { amount: true }
-        }),
-        prisma.transaction.aggregate({
-          _sum: { silverQuantity: true }
-        }),
-        prisma.transaction.groupBy({
-          by: ['type'],
-          _count: { type: true },
-          _sum: { amount: true }
-        }),
-        prisma.transaction.groupBy({
-          by: ['status'],
-          _count: { status: true }
-        })
-      ]);
 
-      const typeStats = transactionsByType.reduce((acc: Record<string, any>, item: any) => {
-        acc[item.type] = {
-          count: item._count.type,
-          totalAmount: item._sum.amount
-        };
-        return acc;
-      }, {} as Record<string, any>);
-
-      const statusStats = transactionsByStatus.reduce((acc: Record<string, number>, item: any) => {
-        acc[item.status] = item._count.status;
-        return acc;
-      }, {} as Record<string, number>);
-
-      logger.info('Retrieved transaction statistics');
-
-      return {
-        success: true,
-        data: {
-          totalTransactions,
-          totalAmount: totalAmount._sum.amount || 0,
-          totalSilverQuantity: totalSilverQuantity._sum.silverQuantity || 0,
-          transactionsByType: typeStats,
-          transactionsByStatus: statusStats
-        }
-      };
-    } catch (error) {
-      logger.error('Get transaction stats error:', error);
-      if (error instanceof HttpError) {
-        throw error;
-      }
-      throw new HttpError(500, 'Failed to fetch transaction statistics');
-    }
-  }
 } 

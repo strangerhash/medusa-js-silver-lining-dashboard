@@ -211,6 +211,26 @@ export const schemas: Record<string, any> = {
       }
     }
   },
+  BulkKYCUpdateDto: {
+    type: 'object',
+    required: ['kycIds', 'status'],
+    properties: {
+      kycIds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Array of KYC application IDs'
+      },
+      status: {
+        type: 'string',
+        enum: ['PENDING', 'APPROVED', 'REJECTED'],
+        description: 'KYC status to set'
+      },
+      notes: {
+        type: 'string',
+        description: 'Optional notes for the status update'
+      }
+    }
+  },
 
   // Transaction DTOs
   CreateTransactionDto: {

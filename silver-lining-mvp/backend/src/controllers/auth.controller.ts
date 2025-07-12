@@ -64,7 +64,7 @@ export class AuthController {
 
       // Generate tokens
       const accessToken = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
+        { id: user.id, email: user.email, role: user.role },
         process.env.JWT_SECRET || 'fallback-secret',
         { expiresIn: '1h' }
       );
@@ -181,7 +181,7 @@ export class AuthController {
 
       // Generate new access token
       const newAccessToken = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
+        { id: user.id, email: user.email, role: user.role },
         process.env.JWT_SECRET || 'fallback-secret',
         { expiresIn: '1h' }
       );

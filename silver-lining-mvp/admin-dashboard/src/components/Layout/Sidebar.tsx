@@ -11,7 +11,8 @@ import {
   CurrencyDollarIcon,
   ShieldCheckIcon,
   ChartPieIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 
 const navigation = [
@@ -22,6 +23,7 @@ const navigation = [
   { name: 'Portfolio', href: '/portfolio', icon: ChartPieIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Reports', href: '/reports', icon: DocumentTextIcon },
+  { name: 'System Logs', href: '/logs', icon: ClipboardDocumentListIcon },
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
 ];
 

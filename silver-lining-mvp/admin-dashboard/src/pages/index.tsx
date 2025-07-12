@@ -45,8 +45,13 @@ const Dashboard: React.FC = () => {
       try {
         setIsLoading(true);
         const [analytics, transactions] = await Promise.all([
-          apiService.getDashboardAnalytics(),
-          apiService.getTransactions()
+          apiService.getAnalyticsDashboard(),
+          apiService.getTransactions({
+            page: 1,
+            limit: 5,
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+          })
         ]);
 
         // Transform the data to match our interface
@@ -59,15 +64,16 @@ const Dashboard: React.FC = () => {
           revenueGrowth: analytics.revenue?.revenueGrowth || 0,
           transactionGrowth: 0, // Not provided by backend yet
           avgTransactionGrowth: 0, // Not provided by backend yet
-          recentTransactions: transactions.transactions?.slice(0, 5) || [],
+          recentTransactions: transactions.data || [],
           monthlyData: analytics.monthlyData || [],
           platformHealth: analytics.platformHealth || []
         };
 
+        console.log('Dashboard data loaded:', { analytics, transactions, transformedData: data });
         setDashboardData(data);
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data');
+        setError(`Failed to load dashboard data: ${err instanceof Error ? err.message : 'Unknown error'}`);
       } finally {
         setIsLoading(false);
       }
@@ -254,7 +260,7 @@ const Dashboard: React.FC = () => {
                       initial={{ scale: 0.8 }}
                       animate={{ scale: 1 }}
                       transition={{ delay: 0.2 + idx * 0.1, duration: 0.5, type: 'spring' }}
-                      className="text-3xl font-bold text-dark-primary"
+                      className="text-lg sm:text-xl lg:text-2xl xl:text-3xl font-bold text-dark-primary truncate"
                     >
                       {item.name === 'Total Revenue' || item.name === 'Avg Transaction'
                         ? formatCurrency(item.value)
@@ -380,7 +386,7 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div>
                         <p className="font-medium text-dark-primary">{transaction.user?.name || 'Unknown User'}</p>
-                        <p className="text-sm text-dark-tertiary">{transaction.type} • {formatDate(transaction.transactionDate)}</p>
+                        <p className="text-sm text-dark-tertiary">{transaction.type} • {formatDate(transaction.createdAt)}</p>
                       </div>
                     </div>
                     <div className="text-right">

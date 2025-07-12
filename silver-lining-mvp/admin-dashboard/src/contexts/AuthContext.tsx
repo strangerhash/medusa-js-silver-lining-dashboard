@@ -33,6 +33,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Check if user is logged in on app load
     const checkAuth = async () => {
       const token = localStorage.getItem('authToken');
+      const refreshToken = localStorage.getItem('refreshToken');
       const userData = localStorage.getItem('user');
       
       if (token && userData) {
@@ -44,6 +45,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // await apiService.verifyToken();
         } catch (error) {
           console.error('Error parsing user data:', error);
+          await logout();
+        }
+      } else if (refreshToken && userData) {
+        // Try to refresh the token
+        try {
+          const response = await apiService.refreshToken(refreshToken);
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+        } catch (error) {
+          console.error('Token refresh failed:', error);
           await logout();
         }
       }
@@ -92,6 +103,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       localStorage.removeItem('authToken');
+      localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
       setUser(null);
       router.push('/login');

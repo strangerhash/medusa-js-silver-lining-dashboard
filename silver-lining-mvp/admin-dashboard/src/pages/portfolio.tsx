@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout/Layout';
 import {
   MagnifyingGlassIcon,
@@ -7,9 +7,55 @@ import {
   ArrowTrendingDownIcon,
   CurrencyDollarIcon,
   ScaleIcon,
-  XMarkIcon
+  XMarkIcon,
+  PencilIcon,
+  TrashIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
+import { apiService } from '../utils/api';
+import { useToast } from '../contexts/ToastContext';
+
+interface Portfolio {
+  id: string;
+  userId: string;
+  totalSilverHolding: number;
+  totalInvested: number;
+  currentValue: number;
+  totalProfit: number;
+  profitPercentage: number;
+  averageBuyPrice: number;
+  currentSilverPrice: number;
+  holdings: any[];
+  performance: {
+    daily: number;
+    weekly: number;
+    monthly: number;
+    yearly: number;
+  };
+  lastUpdated: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    phone?: string;
+    status: string;
+  };
+}
+
+interface PortfolioStats {
+  totalPortfolios: number;
+  totalSilverHolding: number;
+  totalPortfolioValue: number;
+  totalInvested: number;
+  totalProfit: number;
+  overallProfitPercentage: number;
+  averageSilverPrice: number;
+  averagePortfolioValue: number;
+  topPerformers: Portfolio[];
+  recentPortfolios: Portfolio[];
+}
 
 // Mock portfolio data
 const mockPortfolios = [
@@ -76,28 +122,200 @@ const mockPortfolios = [
 ];
 
 const Portfolio: React.FC = () => {
-  const [portfolios, setPortfolios] = useState(mockPortfolios);
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [stats, setStats] = useState<PortfolioStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [selectedPortfolio, setSelectedPortfolio] = useState<any>(null);
+  const [selectedPortfolio, setSelectedPortfolio] = useState<Portfolio | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingPortfolio, setDeletingPortfolio] = useState<Portfolio | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPortfolios, setTotalPortfolios] = useState(0);
+  const [limit] = useState(10);
+  const [sortBy, setSortBy] = useState('currentValue');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [minValue, setMinValue] = useState<number | undefined>();
+  const [maxValue, setMaxValue] = useState<number | undefined>();
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
 
-  const filteredPortfolios = portfolios.filter(portfolio => {
-    const matchesSearch = portfolio.userName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || portfolio.status === statusFilter;
+  const { showToast } = useToast();
+
+  // Debounced search
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Fetch portfolios
+  const fetchPortfolios = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params: any = {
+        page: currentPage,
+        limit,
+        sortBy,
+        sortOrder
+      };
+
+      if (debouncedSearchTerm) params.search = debouncedSearchTerm;
+      if (minValue !== undefined) params.minValue = minValue;
+      if (maxValue !== undefined) params.maxValue = maxValue;
+      if (statusFilter !== 'all') params.status = statusFilter;
+
+      const response = await apiService.getPortfolios(params);
+      
+      setPortfolios(response.data);
+      setTotalPages(response.pagination.totalPages);
+      setTotalPortfolios(response.pagination.total);
+    } catch (error) {
+      console.error('Error fetching portfolios:', error);
+      showToast('Failed to load portfolios', 'error');
+      
+      // Set fallback data to prevent UI from breaking
+      setPortfolios([]);
+      setTotalPages(1);
+      setTotalPortfolios(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, limit, sortBy, sortOrder, debouncedSearchTerm, minValue, maxValue, statusFilter, showToast]);
+
+  // Fetch stats
+  const fetchStats = useCallback(async () => {
+    try {
+      setStatsLoading(true);
+      const response = await apiService.getPortfolioStats();
+      setStats(response);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+      showToast('Failed to load portfolio statistics', 'error');
+      
+      // Set fallback stats to prevent UI from breaking
+      setStats({
+        totalPortfolios: 0,
+        totalSilverHolding: 0,
+        totalPortfolioValue: 0,
+        totalInvested: 0,
+        totalProfit: 0,
+        overallProfitPercentage: 0,
+        averageSilverPrice: 0,
+        averagePortfolioValue: 0,
+        topPerformers: [],
+        recentPortfolios: []
+      });
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [showToast]);
+
+  // Test backend connection
+  useEffect(() => {
+    const testBackend = async () => {
+      try {
+        const isConnected = await apiService.testConnection();
+        setBackendConnected(isConnected);
+        if (!isConnected) {
+          showToast('Backend server is not accessible. Please check if the server is running.', 'warning');
+        }
+      } catch (error) {
+        console.error('Backend connection test failed:', error);
+        setBackendConnected(false);
+        showToast('Backend server is not accessible. Please check if the server is running.', 'warning');
+      }
+    };
     
-    return matchesSearch && matchesStatus;
-  });
+    testBackend();
+  }, [showToast]);
 
-  const totalPortfolioValue = portfolios.reduce((sum, p) => sum + p.currentValue, 0);
-  const totalSilverHolding = portfolios.reduce((sum, p) => sum + p.silverHolding, 0);
-  const totalProfitLoss = portfolios.reduce((sum, p) => sum + p.profitLoss, 0);
+  // Load data on mount and when filters change
+  useEffect(() => {
+    fetchPortfolios();
+  }, [fetchPortfolios]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, minValue, maxValue]);
+
+  const handleViewPortfolio = (portfolio: Portfolio) => {
+    setSelectedPortfolio(portfolio);
+    setShowModal(true);
+  };
+
+  const handleDeletePortfolio = (portfolio: Portfolio) => {
+    setDeletingPortfolio(portfolio);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeletePortfolio = async () => {
+    if (!deletingPortfolio) return;
+
+    try {
+      await apiService.deletePortfolio(deletingPortfolio.id);
+      showToast('Portfolio deleted successfully', 'success');
+      fetchPortfolios();
+      fetchStats();
+    } catch (error) {
+      console.error('Error deleting portfolio:', error);
+      showToast('Failed to delete portfolio', 'error');
+    } finally {
+      setShowDeleteModal(false);
+      setDeletingPortfolio(null);
+    }
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('desc');
+    }
+  };
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortBy !== field) return null;
+    return sortOrder === 'asc' ? 
+      <ArrowTrendingUpIcon className="h-4 w-4 ml-1" /> : 
+      <ArrowTrendingDownIcon className="h-4 w-4 ml-1" />;
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR'
     }).format(amount);
+  };
+
+  const formatCurrencyCompact = (amount: number) => {
+    const isNegative = amount < 0;
+    const absAmount = Math.abs(amount);
+    
+    let result = '';
+    if (absAmount >= 10000000) { // 1 crore
+      result = `₹${(absAmount / 10000000).toFixed(1)}Cr`;
+    } else if (absAmount >= 100000) { // 1 lakh
+      result = `₹${(absAmount / 100000).toFixed(1)}L`;
+    } else if (absAmount >= 1000) { // 1 thousand
+      result = `₹${(absAmount / 1000).toFixed(1)}K`;
+    } else {
+      return formatCurrency(amount);
+    }
+    
+    return isNegative ? `-${result}` : result;
   };
 
   const getProfitLossColor = (value: number) => {
@@ -110,6 +328,20 @@ const Portfolio: React.FC = () => {
     ) : (
       <ArrowTrendingDownIcon className="h-4 w-4 text-red-500" />
     );
+  };
+
+  const formatPercentage = (value: number) => {
+    // Handle NaN, Infinity, and very large numbers
+    if (!isFinite(value)) {
+      return '0.00%';
+    }
+    
+    // Handle very small percentages (less than 0.01%)
+    if (Math.abs(value) < 0.01 && value !== 0) {
+      return value > 0 ? '<0.01%' : '>-0.01%';
+    }
+    
+    return `${value.toFixed(2)}%`;
   };
 
   return (
@@ -127,6 +359,13 @@ const Portfolio: React.FC = () => {
             <p className="mt-2 text-lg text-dark-tertiary">
               View and manage user portfolios and silver holdings
             </p>
+            {backendConnected === false && (
+              <div className="mt-2 p-2 bg-yellow-100 border border-yellow-400 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ Backend server is not accessible. Some features may not work properly.
+                </p>
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -145,10 +384,10 @@ const Portfolio: React.FC = () => {
               <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/25">
                 <CurrencyDollarIcon className="h-6 w-6 text-white" />
               </div>
-              <div className="ml-4">
+              <div className="ml-4 flex-1 min-w-0">
                 <p className="text-sm font-semibold text-dark-secondary">Total Portfolio Value</p>
-                <p className="text-2xl font-bold text-dark-primary">
-                  {formatCurrency(totalPortfolioValue)}
+                <p className="text-lg sm:text-xl lg:text-2xl font-bold text-dark-primary truncate">
+                  {statsLoading ? '...' : formatCurrencyCompact(stats?.totalPortfolioValue || 0)}
                 </p>
               </div>
             </div>
@@ -162,10 +401,10 @@ const Portfolio: React.FC = () => {
               <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/25">
                 <ScaleIcon className="h-6 w-6 text-white" />
               </div>
-              <div className="ml-4">
+              <div className="ml-4 flex-1 min-w-0">
                 <p className="text-sm font-semibold text-dark-secondary">Total Silver Holding</p>
-                <p className="text-2xl font-bold text-dark-primary">
-                  {totalSilverHolding}g
+                <p className="text-lg sm:text-xl lg:text-2xl font-bold text-dark-primary truncate">
+                  {statsLoading ? '...' : `${stats?.totalSilverHolding || 0}g`}
                 </p>
               </div>
             </div>
@@ -179,10 +418,10 @@ const Portfolio: React.FC = () => {
               <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/25">
                 <ArrowTrendingUpIcon className="h-6 w-6 text-white" />
               </div>
-              <div className="ml-4">
+              <div className="ml-4 flex-1 min-w-0">
                 <p className="text-sm font-semibold text-dark-secondary">Total P&L</p>
-                <p className={`text-2xl font-bold ${getProfitLossColor(totalProfitLoss)}`}>
-                  {formatCurrency(totalProfitLoss)}
+                <p className={`text-lg sm:text-xl lg:text-2xl font-bold truncate ${getProfitLossColor(stats?.totalProfit || 0)}`}>
+                  {statsLoading ? '...' : formatCurrencyCompact(stats?.totalProfit || 0)}
                 </p>
               </div>
             </div>
@@ -216,8 +455,9 @@ const Portfolio: React.FC = () => {
               className="input-field"
             >
               <option value="all">All Status</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+              <option value="PENDING">Pending</option>
             </select>
 
             {/* Sort by */}
@@ -265,7 +505,7 @@ const Portfolio: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-transparent divide-y divide-slate-200 dark:divide-slate-700">
-                {filteredPortfolios.map((portfolio, index) => (
+                {portfolios.map((portfolio, index) => (
                   <motion.tr 
                     key={portfolio.id} 
                     initial={{ opacity: 0, y: 20 }}
@@ -274,36 +514,36 @@ const Portfolio: React.FC = () => {
                     className="hover:bg-gradient-to-r hover:from-slate-50 hover:to-gray-50 dark:hover:from-slate-800 dark:hover:to-gray-800 transition-all duration-300"
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-semibold text-dark-primary">{portfolio.userName}</div>
+                      <div className="text-sm font-semibold text-dark-primary">{portfolio.user.name}</div>
                       <div className="text-xs text-dark-muted">ID: {portfolio.userId}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-dark-primary">
-                      {formatCurrency(portfolio.totalInvested)}
+                      {formatCurrencyCompact(portfolio.totalInvested)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-dark-primary">
-                      {formatCurrency(portfolio.currentValue)}
+                      {formatCurrencyCompact(portfolio.currentValue)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-dark-primary">
-                      {portfolio.silverHolding}g
+                      {portfolio.totalSilverHolding}g
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
-                        {getProfitLossIcon(portfolio.profitLoss)}
-                        <span className={`text-sm font-semibold ${getProfitLossColor(portfolio.profitLoss)}`}>
-                          {formatCurrency(portfolio.profitLoss)}
+                        {getProfitLossIcon(portfolio.totalProfit)}
+                        <span className={`text-sm font-semibold ${getProfitLossColor(portfolio.totalProfit)}`}>
+                          {formatCurrencyCompact(portfolio.totalProfit)}
                         </span>
-                        <span className={`text-xs ${getProfitLossColor(portfolio.profitLoss)}`}>
-                          ({portfolio.profitLossPercentage}%)
+                        <span className={`text-xs ${getProfitLossColor(portfolio.totalProfit)}`}>
+                          ({formatPercentage(portfolio.profitPercentage)})
                         </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
-                        portfolio.status === 'Active' 
+                        portfolio.user.status === 'ACTIVE' 
                           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                           : 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
                       }`}>
-                        {portfolio.status}
+                        {portfolio.user.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -343,7 +583,7 @@ const Portfolio: React.FC = () => {
               <div className="p-6 border-b border-slate-200 dark:border-slate-700">
                 <div className="flex justify-between items-center">
                   <h3 className="text-xl font-bold text-gradient">
-                    Portfolio Details - {selectedPortfolio.userName}
+                    Portfolio Details - {selectedPortfolio.user.name}
                   </h3>
                   <motion.button
                     whileHover={{ scale: 1.1 }}
@@ -360,43 +600,43 @@ const Portfolio: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="premium-card p-4">
                     <h4 className="text-sm font-semibold text-dark-secondary mb-2">Total Invested</h4>
-                    <p className="text-xl font-bold text-dark-primary">{formatCurrency(selectedPortfolio.totalInvested)}</p>
+                    <p className="text-xl font-bold text-dark-primary">{formatCurrencyCompact(selectedPortfolio.totalInvested)}</p>
                   </div>
                   <div className="premium-card p-4">
                     <h4 className="text-sm font-semibold text-dark-secondary mb-2">Current Value</h4>
-                    <p className="text-xl font-bold text-dark-primary">{formatCurrency(selectedPortfolio.currentValue)}</p>
+                    <p className="text-xl font-bold text-dark-primary">{formatCurrencyCompact(selectedPortfolio.currentValue)}</p>
                   </div>
                   <div className="premium-card p-4">
                     <h4 className="text-sm font-semibold text-dark-secondary mb-2">Silver Holding</h4>
-                    <p className="text-xl font-bold text-dark-primary">{selectedPortfolio.silverHolding}g</p>
+                    <p className="text-xl font-bold text-dark-primary">{selectedPortfolio.totalSilverHolding}g</p>
                   </div>
                   <div className="premium-card p-4">
                     <h4 className="text-sm font-semibold text-dark-secondary mb-2">Profit/Loss</h4>
                     <div className="flex items-center space-x-2">
-                      {getProfitLossIcon(selectedPortfolio.profitLoss)}
-                      <p className={`text-xl font-bold ${getProfitLossColor(selectedPortfolio.profitLoss)}`}>
-                        {formatCurrency(selectedPortfolio.profitLoss)}
+                      {getProfitLossIcon(selectedPortfolio.totalProfit)}
+                      <p className={`text-xl font-bold ${getProfitLossColor(selectedPortfolio.totalProfit)}`}>
+                        {formatCurrencyCompact(selectedPortfolio.totalProfit)}
                       </p>
                     </div>
-                    <p className={`text-sm ${getProfitLossColor(selectedPortfolio.profitLoss)}`}>
-                      ({selectedPortfolio.profitLossPercentage}%)
+                    <p className={`text-sm ${getProfitLossColor(selectedPortfolio.totalProfit)}`}>
+                      ({formatPercentage(selectedPortfolio.profitPercentage)})
                     </p>
                   </div>
                 </div>
 
                 <div className="premium-card p-4">
                   <h4 className="text-sm font-semibold text-dark-secondary mb-2">Last Transaction</h4>
-                  <p className="text-dark-primary">{selectedPortfolio.lastTransaction}</p>
+                  <p className="text-dark-primary">{selectedPortfolio.lastUpdated}</p>
                 </div>
 
                 <div className="premium-card p-4">
                   <h4 className="text-sm font-semibold text-dark-secondary mb-2">Status</h4>
                   <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
-                    selectedPortfolio.status === 'Active' 
+                    selectedPortfolio.user.status === 'ACTIVE' 
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                       : 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
                   }`}>
-                    {selectedPortfolio.status}
+                    {selectedPortfolio.user.status}
                   </span>
                 </div>
               </div>

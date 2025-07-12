@@ -18,9 +18,13 @@ import { NotificationsController } from './controllers/notifications.controller'
 import { ReportsController } from './controllers/reports.controller';
 import { SettingsController } from './controllers/settings.controller';
 import { AdminController } from './controllers/admin.controller';
+import { LogsController } from './controllers/logs.controller';
 
 // Initialize Redis
 import './services/redis';
+
+// Initialize background services
+import { backgroundService } from './services/background';
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -59,7 +63,8 @@ useExpressServer(app, {
     NotificationsController,
     ReportsController,
     SettingsController,
-    AdminController
+    AdminController,
+    LogsController
   ],
   defaultErrorHandler: false,
   validation: true,
@@ -80,7 +85,8 @@ const spec = routingControllersToSpec(storage, {
     NotificationsController,
     ReportsController,
     SettingsController,
-    AdminController
+    AdminController,
+    LogsController
   ],
   routePrefix: '/api'
 }, {
@@ -119,7 +125,8 @@ const spec = routingControllersToSpec(storage, {
     { name: 'Notifications', description: 'Notification management endpoints' },
     { name: 'Reports', description: 'Report generation endpoints' },
     { name: 'Settings', description: 'System settings endpoints' },
-    { name: 'Admin', description: 'Admin management endpoints' }
+    { name: 'Admin', description: 'Admin management endpoints' },
+    { name: 'Logs', description: 'System logs and audit trail endpoints' }
   ]
 });
 
@@ -162,15 +169,21 @@ app.listen(PORT, () => {
   logger.info(`📚 API Documentation available at http://localhost:${PORT}/api-docs`);
   logger.info(`📋 OpenAPI Spec available at http://localhost:${PORT}/api-spec`);
   logger.info(`🏥 Health check available at http://localhost:${PORT}/health`);
+  
+  // Start background services
+  backgroundService.start();
+  logger.info('🔄 Background services started');
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   logger.info('SIGINT received, shutting down gracefully...');
+  backgroundService.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully...');
+  backgroundService.stop();
   process.exit(0);
 }); 

@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import {
   Bars3Icon,
   MagnifyingGlassIcon,
-  BellIcon,
   UserCircleIcon,
   SunIcon,
   MoonIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import NotificationDropdown from '../NotificationDropdown';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -25,7 +25,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="bg-white/95 dark:bg-slate-900/95 shadow-2xl shadow-slate-500/10 dark:shadow-slate-900/50 border-b border-slate-200/50 dark:border-slate-700/50 backdrop-blur-xl lg:ml-64 transition-all duration-500">
+    <header className="bg-white/95 dark:bg-slate-900/95 shadow-2xl shadow-slate-500/10 dark:shadow-slate-900/50 border-b border-slate-200/50 dark:border-slate-700/50 backdrop-blur-xl lg:ml-64 transition-all duration-500 relative z-40">
       <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
         {/* Left side */}
         <div className="flex items-center">
@@ -69,10 +69,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </button>
 
           {/* Notifications */}
-          <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-800 rounded-xl relative transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500/30">
-            <BellIcon className="h-6 w-6" />
-            <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500"></span>
-          </button>
+          <NotificationDropdown />
 
           {/* User menu */}
           <div className="relative">

@@ -120,6 +120,7 @@ model Notification {
   message    String
   type       NotificationType
   isRead     Boolean  @default(false)
+  metadata   Json?
   createdAt  DateTime @default(now())
 }
 
@@ -138,4 +139,20 @@ model Setting {
   category    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Log {
+  id         String   @id @default(uuid())
+  level      String   // DEBUG, INFO, WARN, ERROR, AUDIT
+  category   String   // AUTH, USER, TRANSACTION, PORTFOLIO, KYC, SYSTEM, API, SECURITY
+  message    String
+  userId     String?
+  userEmail  String?
+  action     String?
+  resource   String?
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  timestamp  DateTime @default(now())
 }

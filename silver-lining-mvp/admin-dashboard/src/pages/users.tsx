@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '../components/Layout/Layout';
 import { apiService } from '../utils/api';
-import { useToast } from '../components/Toast';
+import { useToast } from '../contexts/ToastContext';
+import { logger } from '../utils/logger';
+import ConfirmationDialog from '../components/ConfirmationDialog';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -14,6 +16,7 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
+// import { logger } from '../utils/logger';
 
 interface User {
   id: string;
@@ -148,6 +151,7 @@ const Users: React.FC = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserWithKYC | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -376,32 +380,44 @@ const Users: React.FC = () => {
 
   const handleDeleteUsers = async () => {
     if (selectedUsers.length === 0) return;
-    
-    if (!confirm(`Are you sure you want to delete ${selectedUsers.length} user(s)?`)) {
-      return;
-    }
+    setShowBulkDeleteDialog(true);
+  };
 
+  const handleConfirmBulkDelete = async () => {
     try {
+      // Store the count before clearing
+      const deletedCount = selectedUsers.length;
+      
       // Delete each selected user
       await Promise.all(selectedUsers.map(userId => apiService.deleteUser(userId)));
       
-      // Refresh the user list
+      // Clear selected users first
       setSelectedUsers([]);
+      
+      // Show success toast first
+      showToast(`Successfully deleted ${deletedCount} user(s)`, 'success');
+      
+      // Then refresh the user list
       setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
       refreshUserList(); // Trigger data refresh
       
-      showToast({
-        type: 'success',
-        title: 'Users Deleted',
-        message: `Successfully deleted ${selectedUsers.length} user(s)`
-      });
+      // Log the bulk delete action
+      await logger.userAction(
+        'BULK_DELETE',
+        'USER',
+        'multiple',
+        `Bulk deleted ${deletedCount} users`,
+        {
+          metadata: {
+            deletedCount,
+            action: 'BULK_DELETE'
+          }
+        }
+      );
+      
     } catch (err) {
       console.error('Error deleting users:', err);
-      showToast({
-        type: 'error',
-        title: 'Delete Failed',
-        message: 'Failed to delete some users. Please try again.'
-      });
+      showToast('Failed to delete some users. Please try again.', 'error');
     }
   };
 
@@ -412,28 +428,48 @@ const Users: React.FC = () => {
       console.log('Attempting to delete user:', userToDelete.id);
       await apiService.deleteUser(userToDelete.id);
       console.log('User deleted successfully');
+      
+      // Log the user deletion
+      await logger.userAction(
+        'DELETE',
+        'USER',
+        userToDelete.id,
+        `User ${userToDelete.name} (${userToDelete.email}) deleted by admin`,
+        {
+          userId: userToDelete.id,
+          userEmail: userToDelete.email,
+          metadata: {
+            deletedUser: {
+              name: userToDelete.name,
+              email: userToDelete.email,
+              role: userToDelete.role,
+              status: userToDelete.status
+            }
+          }
+        }
+      );
+      
+      // Store user name before clearing the state
+      const deletedUserName = userToDelete.name;
+      
+      // Close modal and clear state
       setShowDeleteModal(false);
       setUserToDelete(null);
-      // Refresh the user list
+      
+      // Show success toast first
+      showToast(`Successfully deleted ${deletedUserName}`, 'success');
+      
+      // Then refresh the user list
       setPagination(prev => ({ ...prev, page: 1 }));
       refreshUserList(); // Trigger data refresh
       
-      showToast({
-        type: 'success',
-        title: 'User Deleted',
-        message: `Successfully deleted ${userToDelete.name}`
-      });
     } catch (err) {
       console.error('Error deleting user:', err);
       console.error('Error details:', {
         message: err instanceof Error ? err.message : 'Unknown error',
         user: userToDelete
       });
-      showToast({
-        type: 'error',
-        title: 'Delete Failed',
-        message: err instanceof Error ? err.message : 'Failed to delete user'
-      });
+      showToast('Failed to delete user. Please try again.', 'error');
     }
   };
 
@@ -442,24 +478,36 @@ const Users: React.FC = () => {
 
     try {
       await apiService.updateUser(selectedUser.id, updatedUser);
+      
+      // Log the user update
+      await logger.userAction(
+        'UPDATE',
+        'USER',
+        selectedUser.id,
+        `User ${selectedUser.name} (${selectedUser.email}) updated by admin`,
+        {
+          userId: selectedUser.id,
+          userEmail: selectedUser.email,
+          metadata: {
+            updatedFields: updatedUser,
+            previousData: {
+              name: selectedUser.name,
+              email: selectedUser.email,
+              role: selectedUser.role,
+              status: selectedUser.status
+            }
+          }
+        }
+      );
+      
+      showToast(`Successfully updated ${selectedUser.name}`, 'success');
       setShowEditModal(false);
       setSelectedUser(null);
       // Refresh the user list
       setPagination(prev => ({ ...prev, page: 1 }));
       refreshUserList(); // Trigger data refresh
-      
-      showToast({
-        type: 'success',
-        title: 'User Updated',
-        message: `Successfully updated ${selectedUser.name}`
-      });
     } catch (err) {
-      console.error('Error updating user:', err);
-      showToast({
-        type: 'error',
-        title: 'Update Failed',
-        message: 'Failed to update user. Please try again.'
-      });
+      showToast('Failed to update user. Please try again.', 'error');
     }
   };
 
@@ -851,42 +899,29 @@ const Users: React.FC = () => {
           </div>
         )}
 
-        {/* Delete Confirmation Modal */}
-        {showDeleteModal && userToDelete && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-800 rounded-lg p-6 w-full max-w-md mx-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-red-600">Delete User</h3>
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteModal(false)}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                >
-                  <XMarkIcon className="h-6 w-6" />
-                </button>
-              </div>
-              <p className="text-dark-primary mb-4">
-                Are you sure you want to delete <strong>{userToDelete.name}</strong>? This action cannot be undone.
-              </p>
-              <div className="flex space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteModal(false)}
-                  className="btn-secondary flex-1"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDelete}
-                  className="btn-danger flex-1"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Delete Confirmation Dialog */}
+        <ConfirmationDialog
+          isOpen={showDeleteModal}
+          onClose={() => setShowDeleteModal(false)}
+          onConfirm={handleConfirmDelete}
+          title="Delete User"
+          message={`Are you sure you want to delete ${userToDelete?.name}? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          type="danger"
+        />
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <ConfirmationDialog
+          isOpen={showBulkDeleteDialog}
+          onClose={() => setShowBulkDeleteDialog(false)}
+          onConfirm={handleConfirmBulkDelete}
+          title="Delete Multiple Users"
+          message={`Are you sure you want to delete ${selectedUsers.length} user(s)? This action cannot be undone.`}
+          confirmText="Delete All"
+          cancelText="Cancel"
+          type="danger"
+        />
       </div>
     </Layout>
   );
